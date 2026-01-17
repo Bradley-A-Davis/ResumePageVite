@@ -6,6 +6,8 @@ const SKY_TOP = '#2A8AC4'
 const SKY_BOTTOM = '#D6C5E7'
 const GROUND_WIDTH = 200
 const GROUND_DEPTH = 30
+const CARD_BASE_SCALE = 1.06
+const SWARM_SEED = 1337
 
 // ----- FAST TERRAIN NOISE (value noise + fbm) -----
 const smoothstep = (t) => t * t * (3 - 2 * t)
@@ -42,17 +44,18 @@ const fbm2D = (x, z, octaves = 5) => {
   }
   return THREE.MathUtils.clamp(v, 0, 1)
 }
+const createRng = (seed) => {
+  let t = seed >>> 0
+  return () => {
+    t += 0x6d2b79f5
+    let r = Math.imul(t ^ (t >>> 15), 1 | t)
+    r ^= r + Math.imul(r ^ (r >>> 7), 61 | r)
+    return ((r ^ (r >>> 14)) >>> 0) / 4294967296
+  }
+}
 
 const CANVAS_ITEMS = [
   
-  {
-    title: 'SLT Venture',
-    body: 'Drop your copy, links, or sections here.',
-  },
-  {
-    title: 'Oracle',
-    body: 'Drop your copy, links, or sections here.',
-  },
   {
     title: 'Home Card',
     body: 'Drop your copy, links, or sections here.',
@@ -61,24 +64,16 @@ const CANVAS_ITEMS = [
     imageScale: 1.06,
     transparent: true,
   },
-  {
-    title: 'Bow Sight',
-    body: 'Drop your copy, links, or sections here.',
-  },
-  {
-    title: 'NAS Storage',
-    body: 'Drop your copy, links, or sections here.',
-  },
-  {
-    title: 'All-purpose Server ',
-    body: 'Drop your copy, links, or sections here.',
-  },
 ]
-const DEFAULT_CANVAS_INDEX = 2
+const DEFAULT_CANVAS_INDEX = 0
 
 function Home() {
   const mountRef = useRef(null)
   const cursorRef = useRef(null)
+  const namecardRef = useRef(null)
+  const namecardTitleRef = useRef(null)
+  const swarmTriggerRef = useRef(() => {})
+  const swarmReleaseRef = useRef(() => {})
   const [activeCanvas, setActiveCanvas] = useState(DEFAULT_CANVAS_INDEX)
   const scrollLockRef = useRef(0)
   const infoPanelStyle = {
@@ -101,7 +96,7 @@ function Home() {
     display: 'flex',
     flexDirection: 'column',
     gap: '16px',
-    overflow: 'auto',
+    overflow: 'visible',
   }
   const infoPanelMotionStyle = {
     transition: 'transform 600ms ease',
@@ -151,6 +146,7 @@ function Home() {
       0.1,
       200
     )
+    const baseFov = camera.fov
     camera.position.set(0, 3.6, 6.4)
     const baseCameraPos = camera.position.clone()
     const baseLookAt = new THREE.Vector3(0, 1.2, -18)
@@ -162,12 +158,30 @@ function Home() {
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
     renderer.setSize(mount.clientWidth, mount.clientHeight)
     renderer.outputColorSpace = THREE.SRGBColorSpace
+    renderer.domElement.style.position = 'fixed'
+    renderer.domElement.style.inset = '0'
+    renderer.domElement.style.zIndex = '0'
+    renderer.domElement.style.pointerEvents = 'none'
 
     // ✅ shading helpers
     renderer.shadowMap.enabled = true
     renderer.shadowMap.type = THREE.PCFSoftShadowMap
 
+    const overlayRenderer = new THREE.WebGLRenderer({
+      antialias: true,
+      alpha: true,
+    })
+    overlayRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+    overlayRenderer.setSize(mount.clientWidth, mount.clientHeight)
+    overlayRenderer.outputColorSpace = THREE.SRGBColorSpace
+    overlayRenderer.setClearColor(0x000000, 0)
+    overlayRenderer.domElement.style.position = 'fixed'
+    overlayRenderer.domElement.style.inset = '0'
+    overlayRenderer.domElement.style.zIndex = '950'
+    overlayRenderer.domElement.style.pointerEvents = 'none'
+
     mount.appendChild(renderer.domElement)
+    mount.appendChild(overlayRenderer.domElement)
 
     const renderTarget = new THREE.WebGLRenderTarget(
       mount.clientWidth,
@@ -218,6 +232,8 @@ function Home() {
     })
     const postQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), postMaterial)
     postScene.add(postQuad)
+
+    const swarmScene = new THREE.Scene()
 
     // --- SKY ---
     const skyCanvas = document.createElement('canvas')
@@ -782,6 +798,17 @@ function Home() {
     }
     updateCloudPositions()
 
+    const coverCloudMaterial = new THREE.SpriteMaterial({
+      map: cloudTexture,
+      transparent: true,
+      depthWrite: false,
+      opacity: 0,
+    })
+    const coverCloud = new THREE.Sprite(coverCloudMaterial)
+    coverCloud.visible = false
+    coverCloud.renderOrder = 5
+    swarmScene.add(coverCloud)
+
     // --- CLOUD 5 (cloud1 texture) ---
     const cloud5 = new THREE.Sprite(cloudMaterial)
     const cloud5X = 13.0
@@ -993,9 +1020,70 @@ function Home() {
     }
     updateMountainPositions()
 
+    const swarmCloudTextures = [cloudTexture, cloud2Texture, cloud3Texture]
+    const swarmClouds = []
+    const swarmState = { current: 0, target: 0, mode: 'idle' }
+    let swarmRng = createRng(SWARM_SEED)
+    const randomizeSwarmCloud = (entry) => {
+      const depth = 10 + swarmRng() * 8
+      const z = camera.position.z - depth
+      const x = (swarmRng() - 0.5) * 22
+      const y = 3 + swarmRng() * 8
+      const size = 0.8 + swarmRng() * 2.2
+      const image = entry.texture.image
+      const aspect = image ? image.width / image.height : 1.6
+      entry.baseScale.set(size * aspect, size)
+      entry.sprite.scale.set(entry.baseScale.x, entry.baseScale.y, 1)
+      entry.sprite.position.set(x, y, z)
+      entry.sprite.rotation.z = (swarmRng() * 2 - 1) * 0.3
+      entry.speedIn = 1.6 + swarmRng() * 1.2
+      entry.speedOut = entry.speedIn * (1.3 + swarmRng() * 0.4)
+      entry.velocity.set(0, 0, 0.6 + swarmRng() * 0.8)
+      entry.material.opacity = 0
+      entry.sprite.visible = true
+    }
+    for (let i = 0; i < 25; i++) {
+      const texture = swarmCloudTextures[i % swarmCloudTextures.length]
+      const material = new THREE.SpriteMaterial({
+        map: texture,
+        transparent: true,
+        depthWrite: false,
+        opacity: 0,
+      })
+      const sprite = new THREE.Sprite(material)
+      sprite.visible = false
+      sprite.renderOrder = 3
+      swarmScene.add(sprite)
+      swarmClouds.push({
+        sprite,
+        material,
+        texture,
+        velocity: new THREE.Vector3(),
+        speedIn: 0,
+        speedOut: 0,
+        drift: new THREE.Vector2(swarmRng() * 2 - 1, swarmRng() * 2 - 1),
+        spin: swarmRng() * 2 - 1,
+        alpha: 1,
+        baseScale: new THREE.Vector2(1, 1),
+      })
+    }
+    const triggerSwarm = () => {
+      swarmState.mode = 'in'
+      swarmState.target = 1
+      swarmRng = createRng(SWARM_SEED)
+      swarmClouds.forEach((entry) => randomizeSwarmCloud(entry))
+    }
+    const releaseSwarm = () => {
+      swarmState.mode = 'out'
+      swarmState.target = 0
+    }
+    swarmTriggerRef.current = triggerSwarm
+    swarmReleaseRef.current = releaseSwarm
+
     // --- LOOP ---
     let raf = 0
     const startTime = performance.now()
+    let lastFrame = startTime
     const cloudMotion = [
       { phase: 0.0, ampX: 0.12, ampY: 0.06 },
       { phase: 0.7, ampX: 0.14, ampY: 0.06 },
@@ -1023,7 +1111,10 @@ function Home() {
       { key: 'bush2FarFront', amp: 0.05, phase: 7.5 },
     ]
     const animate = () => {
-      const t = (performance.now() - startTime) * 0.001
+      const now = performance.now()
+      const t = (now - startTime) * 0.001
+      const dt = Math.min(0.05, (now - lastFrame) * 0.001)
+      lastFrame = now
       mouseOffset.current = THREE.MathUtils.lerp(
         mouseOffset.current,
         mouseOffset.target,
@@ -1034,13 +1125,21 @@ function Home() {
         mouseOffsetY.target,
         0.12
       )
+      const skyPan = swarmState.current
+      const zoomFov = THREE.MathUtils.lerp(baseFov, baseFov * 0.78, skyPan)
+      if (camera.fov !== zoomFov) {
+        camera.fov = zoomFov
+        camera.updateProjectionMatrix()
+      }
       camera.position.x = baseCameraPos.x - mouseOffset.current * 1.2
-      camera.position.y = baseCameraPos.y - mouseOffsetY.current * 0.8
-      camera.position.z = baseCameraPos.z + mouseOffsetY.current * 0.45
+      camera.position.y =
+        baseCameraPos.y - mouseOffsetY.current * 0.8 + skyPan * 1.1
+      camera.position.z =
+        baseCameraPos.z + mouseOffsetY.current * 0.45 - skyPan * 1.2
       camera.lookAt(
         baseLookAt.x + mouseOffset.current * 0.08,
-        baseLookAt.y + mouseOffsetY.current * 0.05,
-        baseLookAt.z
+        baseLookAt.y + mouseOffsetY.current * 0.05 + skyPan * 2.6,
+        baseLookAt.z - skyPan * 6.5
       )
       const baseCloudX = cloudBaseX * cloudXFactor
       const minCloudX = baseCloudX + minCloudXOffset
@@ -1064,6 +1163,113 @@ function Home() {
       cloud4.position.y = cloud4Y + cloud4LoopY
       cloud5.position.x = cloud5X + cloud5LoopX
       cloud5.position.y = cloud5Y + cloud5LoopY
+      const swarmEase = swarmState.mode === 'out' ? 0.015 : 0.03
+      swarmState.current = THREE.MathUtils.lerp(
+        swarmState.current,
+        swarmState.target,
+        swarmEase
+      )
+      if (swarmState.current > 0.01) {
+        const centerX = camera.position.x
+        const centerY = camera.position.y + 0.6
+        swarmClouds.forEach((entry) => {
+          const toCenterX = centerX - entry.sprite.position.x
+          const toCenterY = centerY - entry.sprite.position.y
+          const centerLen = Math.max(0.001, Math.hypot(toCenterX, toCenterY))
+          const dirX =
+            swarmState.mode === 'out' ? -toCenterX / centerLen : toCenterX / centerLen
+          const dirY =
+            swarmState.mode === 'out' ? -toCenterY / centerLen : toCenterY / centerLen
+          const speed =
+            swarmState.mode === 'out' ? entry.speedOut : entry.speedIn
+          const desiredVx = dirX * speed
+          const desiredVy = dirY * speed
+          entry.velocity.x = THREE.MathUtils.lerp(
+            entry.velocity.x,
+            desiredVx,
+            0.1
+          )
+          entry.velocity.y = THREE.MathUtils.lerp(
+            entry.velocity.y,
+            desiredVy,
+            0.1
+          )
+          entry.sprite.position.x += entry.velocity.x * dt
+          entry.sprite.position.y += entry.velocity.y * dt
+          entry.sprite.position.z += entry.velocity.z * dt
+          if (
+            entry.sprite.position.z > camera.position.z - 2 ||
+            Math.abs(entry.sprite.position.x) > 18 ||
+            entry.sprite.position.y > 14 ||
+            entry.sprite.position.y < 1
+          ) {
+            if (swarmState.mode === 'out') {
+              entry.material.opacity = 0
+              entry.sprite.visible = false
+            } else {
+              randomizeSwarmCloud(entry)
+            }
+          }
+          const swell = 1 + swarmState.current * 0.12
+          entry.sprite.scale.set(
+            entry.baseScale.x * swell,
+            entry.baseScale.y * swell,
+            1
+          )
+          entry.material.opacity = swarmState.current > 0.01 ? entry.alpha : 0
+          entry.sprite.quaternion.copy(camera.quaternion)
+        })
+        const coverProgress = Math.max(0, (swarmState.current - 0.7) / 0.3)
+        coverCloud.visible = coverProgress > 0.01
+        if (coverCloud.visible) {
+          const image = cloudTexture.image
+          const aspect = image ? image.width / image.height : 1.6
+          const coverScale = 8 + coverProgress * 10
+          coverCloud.scale.set(coverScale * aspect, coverScale, 1)
+          coverCloud.position.set(
+            camera.position.x,
+            camera.position.y + 0.6,
+            camera.position.z - 1.2
+          )
+          coverCloud.material.opacity = Math.min(1, coverProgress * 1.4)
+          coverCloud.quaternion.copy(camera.quaternion)
+        }
+      } else {
+        swarmClouds.forEach((entry) => {
+          entry.material.opacity = 0
+          entry.sprite.visible = false
+        })
+        coverCloud.visible = false
+        coverCloud.material.opacity = 0
+      }
+      if (namecardRef.current) {
+        const cardProgress =
+          swarmState.mode === 'out'
+            ? Math.pow(swarmState.current, 1.7)
+            : swarmState.current
+        const cardScale = CARD_BASE_SCALE * (1 + cardProgress * 2.6)
+        const cardTranslate = 36 + cardProgress * 1200
+        namecardRef.current.style.setProperty(
+          '--card-scale',
+          cardScale.toFixed(3)
+        )
+        namecardRef.current.style.setProperty(
+          '--card-translate',
+          `${cardTranslate.toFixed(1)}px`
+        )
+      }
+      if (namecardTitleRef.current) {
+        const titleOpacity = Math.max(0, 1 - swarmState.current * 1.8)
+        const titleTranslate = swarmState.current * 520
+        namecardTitleRef.current.style.setProperty(
+          '--title-opacity',
+          titleOpacity.toFixed(3)
+        )
+        namecardTitleRef.current.style.setProperty(
+          '--title-translate',
+          `${titleTranslate.toFixed(1)}px`
+        )
+      }
       grass.quaternion.copy(camera.quaternion)
       grassLeft.quaternion.copy(camera.quaternion)
       grassRight.quaternion.copy(camera.quaternion)
@@ -1180,6 +1386,7 @@ function Home() {
       mountain.quaternion.copy(camera.quaternion)
       mountainRight.quaternion.copy(camera.quaternion)
       renderer.render(scene, camera)
+      overlayRenderer.render(swarmScene, camera)
       raf = requestAnimationFrame(animate)
     }
 
@@ -1189,6 +1396,8 @@ function Home() {
       camera.updateProjectionMatrix()
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
       renderer.setSize(clientWidth, clientHeight)
+      overlayRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+      overlayRenderer.setSize(clientWidth, clientHeight)
       updateCloudPositions()
       updateMountainPositions()
     }
@@ -1212,6 +1421,8 @@ function Home() {
       window.removeEventListener('resize', onResize)
       window.removeEventListener('mousemove', onMouseMove)
       cancelAnimationFrame(raf)
+      swarmTriggerRef.current = () => {}
+      swarmReleaseRef.current = () => {}
 
       skyTexture.dispose()
       terrainGeo.dispose()
@@ -1229,20 +1440,26 @@ function Home() {
       boulderTextureFlipped.dispose()
       cloudMaterial.dispose()
       cloudTexture.dispose()
+      coverCloudMaterial.dispose()
       cloud2Material.dispose()
       cloud2Texture.dispose()
       cloud2FlippedMaterial.dispose()
       cloud2TextureFlipped.dispose()
       cloud3Material.dispose()
       cloud3Texture.dispose()
+      swarmClouds.forEach((entry) => entry.material.dispose())
       mountainMaterial.dispose()
       mountainTexture.dispose()
       mountainFlippedMaterial.dispose()
       mountainTextureFlipped.dispose()
       renderer.dispose()
+      overlayRenderer.dispose()
 
       if (renderer.domElement.parentNode === mount) {
         mount.removeChild(renderer.domElement)
+      }
+      if (overlayRenderer.domElement.parentNode === mount) {
+        mount.removeChild(overlayRenderer.domElement)
       }
     }
   }, [])
@@ -1308,15 +1525,28 @@ function Home() {
   }, [])
 
   useEffect(() => {
+    const triggerCloudSwarm = () => {
+      if (swarmTriggerRef.current) {
+        swarmTriggerRef.current()
+      }
+    }
+    const releaseCloudSwarm = () => {
+      if (swarmReleaseRef.current) {
+        swarmReleaseRef.current()
+      }
+    }
     const onWheel = (event) => {
       const now = Date.now()
-      if (now - scrollLockRef.current < 450) return
       if (event.deltaY < -5) {
+        triggerCloudSwarm()
+        if (now - scrollLockRef.current < 450) return
         scrollLockRef.current = now
         setActiveCanvas((prev) =>
           Math.min(prev + 1, CANVAS_ITEMS.length - 1)
         )
       } else if (event.deltaY > 5) {
+        releaseCloudSwarm()
+        if (now - scrollLockRef.current < 450) return
         scrollLockRef.current = now
         setActiveCanvas((prev) => Math.max(prev - 1, 0))
       }
@@ -1333,6 +1563,11 @@ function Home() {
       const deltaY = touchEndY - touchStartY
       if (Math.abs(deltaY) < 30) return
       const now = Date.now()
+      if (deltaY < 0) {
+        triggerCloudSwarm()
+      } else {
+        releaseCloudSwarm()
+      }
       if (now - scrollLockRef.current < 450) return
       scrollLockRef.current = now
       if (deltaY < 0) {
@@ -1583,6 +1818,7 @@ function Home() {
                     srcSet={item.imageMobile}
                   />
                   <img
+                    ref={namecardRef}
                     src={item.image}
                     alt={item.title}
                     className="namecard-image"
@@ -1590,12 +1826,14 @@ function Home() {
                       width: '100%',
                       height: 'auto',
                       borderRadius: '20px',
-                      transform: `translateY(var(--namecard-translate, -16px)) scale(${item.imageScale || 1})`,
+                      transform:
+                        'translateY(var(--card-translate, 36px)) scale(var(--card-scale, 1))',
                     }}
                   />
                 </picture>
               ) : (
                 <img
+                  ref={namecardRef}
                   src={item.image}
                   alt={item.title}
                   className="namecard-image"
@@ -1603,20 +1841,24 @@ function Home() {
                     width: '100%',
                     height: 'auto',
                     borderRadius: '20px',
-                    transform: `translateY(var(--namecard-translate, -16px)) scale(${item.imageScale || 1})`,
+                    transform:
+                      'translateY(var(--card-translate, 36px)) scale(var(--card-scale, 1))',
                   }}
                 />
               )}
-              <div
-                className="namecard-title"
-                style={{
-                  textAlign: 'center',
-                  fontSize: '28px',
-                  letterSpacing: '0.1em',
-                  textTransform: 'uppercase',
-                  color: '#F8FAFC',
-                  fontFamily: '"Vast Shadow", serif',
-                  fontWeight: 700,
+          <div
+            className="namecard-title"
+            ref={namecardTitleRef}
+            style={{
+              textAlign: 'center',
+              fontSize: '28px',
+              letterSpacing: '0.1em',
+              textTransform: 'uppercase',
+              color: '#F8FAFC',
+              opacity: 'var(--title-opacity, 1)',
+              transform: 'translateY(var(--title-translate, 0px))',
+              fontFamily: '"Vast Shadow", serif',
+              fontWeight: 700,
                   textShadow:
                     '0 14px 28px rgba(0, 0, 0, 0.95), 0 0 10px rgba(0, 0, 0, 0.8), 0 0 18px rgba(0, 0, 0, 0.6)',
                   WebkitTextStroke: '1px rgba(0, 0, 0, 0.75)',
