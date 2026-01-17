@@ -1246,7 +1246,7 @@ function Home() {
         const cardProgress =
           swarmState.mode === 'out'
             ? Math.pow(swarmState.current, 1.7)
-            : swarmState.current
+            : Math.pow(swarmState.current, 1.6)
         const cardScale = CARD_BASE_SCALE * (1 + cardProgress * 2.6)
         const cardTranslate = 36 + cardProgress * 1200
         namecardRef.current.style.setProperty(
@@ -1561,16 +1561,18 @@ function Home() {
       if (!event.changedTouches?.length) return
       const touchEndY = event.changedTouches[0].clientY
       const deltaY = touchEndY - touchStartY
-      if (Math.abs(deltaY) < 30) return
+      const isReverse = window.matchMedia('(pointer: coarse)').matches
+      const scrollDelta = isReverse ? -deltaY : deltaY
+      if (Math.abs(scrollDelta) < 30) return
       const now = Date.now()
-      if (deltaY < 0) {
+      if (scrollDelta < 0) {
         triggerCloudSwarm()
       } else {
         releaseCloudSwarm()
       }
       if (now - scrollLockRef.current < 450) return
       scrollLockRef.current = now
-      if (deltaY < 0) {
+      if (scrollDelta < 0) {
         setActiveCanvas((prev) => Math.max(prev - 1, 0))
       } else {
         setActiveCanvas((prev) =>
@@ -1637,6 +1639,14 @@ function Home() {
         @media (min-width: 769px) {
           .namecard-title {
             margin-top: 0;
+          }
+        }
+        @media (max-width: 768px) {
+          .namecard-image {
+            --card-translate-offset: -48px;
+          }
+          .namecard-title {
+            --title-offset: 32px;
           }
         }
       `}</style>
@@ -1827,7 +1837,7 @@ function Home() {
                       height: 'auto',
                       borderRadius: '20px',
                       transform:
-                        'translateY(var(--card-translate, 36px)) scale(var(--card-scale, 1))',
+                        'translateY(calc(var(--card-translate, 36px) + var(--card-translate-offset, 0px))) scale(var(--card-scale, 1))',
                     }}
                   />
                 </picture>
@@ -1842,7 +1852,7 @@ function Home() {
                     height: 'auto',
                     borderRadius: '20px',
                     transform:
-                      'translateY(var(--card-translate, 36px)) scale(var(--card-scale, 1))',
+                      'translateY(calc(var(--card-translate, 36px) + var(--card-translate-offset, 0px))) scale(var(--card-scale, 1))',
                   }}
                 />
               )}
@@ -1856,7 +1866,8 @@ function Home() {
               textTransform: 'uppercase',
               color: '#F8FAFC',
               opacity: 'var(--title-opacity, 1)',
-              transform: 'translateY(var(--title-translate, 0px))',
+              transform:
+                'translateY(calc(var(--title-translate, 0px) + var(--title-offset, 0px)))',
               fontFamily: '"Vast Shadow", serif',
               fontWeight: 700,
                   textShadow:
