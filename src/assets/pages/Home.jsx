@@ -67,13 +67,15 @@ const CANVAS_ITEMS = [
 ]
 const DEFAULT_CANVAS_INDEX = 0
 
-function Home() {
+function Home({ onScrollUpComplete }) {
   const mountRef = useRef(null)
   const cursorRef = useRef(null)
   const namecardRef = useRef(null)
   const namecardTitleRef = useRef(null)
   const swarmTriggerRef = useRef(() => {})
   const swarmReleaseRef = useRef(() => {})
+  const onScrollUpCompleteRef = useRef(onScrollUpComplete)
+  const scrollUpPendingRef = useRef(false)
   const [activeCanvas, setActiveCanvas] = useState(DEFAULT_CANVAS_INDEX)
   const scrollLockRef = useRef(0)
   const infoPanelStyle = {
@@ -132,6 +134,10 @@ function Home() {
         : infoPanelStyle.WebkitBackdropFilter,
     }
   }
+
+  useEffect(() => {
+    onScrollUpCompleteRef.current = onScrollUpComplete
+  }, [onScrollUpComplete])
 
   useEffect(() => {
     const mount = mountRef.current
@@ -1070,12 +1076,14 @@ function Home() {
     const triggerSwarm = () => {
       swarmState.mode = 'in'
       swarmState.target = 1
+      scrollUpPendingRef.current = true
       swarmRng = createRng(SWARM_SEED)
       swarmClouds.forEach((entry) => randomizeSwarmCloud(entry))
     }
     const releaseSwarm = () => {
       swarmState.mode = 'out'
       swarmState.target = 0
+      scrollUpPendingRef.current = false
     }
     swarmTriggerRef.current = triggerSwarm
     swarmReleaseRef.current = releaseSwarm
@@ -1169,6 +1177,16 @@ function Home() {
         swarmState.target,
         swarmEase
       )
+      if (
+        scrollUpPendingRef.current &&
+        swarmState.mode === 'in' &&
+        swarmState.current >= 0.98
+      ) {
+        scrollUpPendingRef.current = false
+        if (onScrollUpCompleteRef.current) {
+          onScrollUpCompleteRef.current()
+        }
+      }
       if (swarmState.current > 0.01) {
         const centerX = camera.position.x
         const centerY = camera.position.y + 0.6
@@ -1591,6 +1609,20 @@ function Home() {
     }
   }, [])
 
+  const handleScrollUp = () => {
+    if (swarmTriggerRef.current) {
+      swarmTriggerRef.current()
+    }
+    setActiveCanvas((prev) => Math.min(prev + 1, CANVAS_ITEMS.length - 1))
+  }
+
+  const handleScrollDown = () => {
+    if (swarmReleaseRef.current) {
+      swarmReleaseRef.current()
+    }
+    setActiveCanvas((prev) => Math.max(prev - 1, 0))
+  }
+
   return (
     <>
       <style>{`
@@ -1698,11 +1730,7 @@ function Home() {
         <button
           type="button"
           className="scroll-hint--up"
-          onClick={() =>
-            setActiveCanvas((prev) =>
-              Math.min(prev + 1, CANVAS_ITEMS.length - 1)
-            )
-          }
+          onClick={handleScrollUp}
           style={{
             position: 'fixed',
             top: '18px',
@@ -1758,9 +1786,7 @@ function Home() {
         <button
           type="button"
           className="scroll-hint--down"
-          onClick={() =>
-            setActiveCanvas((prev) => Math.max(prev - 1, 0))
-          }
+          onClick={handleScrollDown}
           style={{
             position: 'fixed',
             bottom: '18px',
