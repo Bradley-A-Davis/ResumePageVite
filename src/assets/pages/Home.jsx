@@ -72,8 +72,21 @@ function Home() {
   const cursorRef = useRef(null)
   const namecardRef = useRef(null)
   const namecardTitleRef = useRef(null)
+  const whiteFadeRef = useRef(null)
+  const viewStateRef = useRef('normal')
   const swarmTriggerRef = useRef(() => {})
   const swarmReleaseRef = useRef(() => {})
+  const cameraDropRef = useRef({
+    y: 0,
+    vy: 0,
+    pitch: 0,
+    vp: 0,
+    roll: 0,
+    vr: 0,
+    mode: 'idle',
+    active: false,
+  })
+  const whiteFadeLevelRef = useRef(0)
   const scrollUpPendingRef = useRef(false)
   const [activeCanvas, setActiveCanvas] = useState(DEFAULT_CANVAS_INDEX)
   const scrollLockRef = useRef(0)
@@ -1134,16 +1147,93 @@ function Home() {
         camera.fov = zoomFov
         camera.updateProjectionMatrix()
       }
+      if (cameraDropRef.current.active) {
+        const drop = cameraDropRef.current
+        if (drop.mode === 'recover') {
+          drop.vy += (-drop.y * 26 - drop.vy * 9) * dt
+          drop.y += drop.vy * dt
+          drop.pitch += drop.vp * dt
+          drop.roll += drop.vr * dt
+          drop.vp += (-drop.pitch * 28 - drop.vp * 10) * dt
+          drop.vr += (-drop.roll * 20 - drop.vr * 10) * dt
+        } else {
+          drop.vy += -22 * dt
+          drop.y += drop.vy * dt
+          if (drop.y < -3.1) {
+            drop.y = -3.1
+            drop.vy = -drop.vy * 0.42
+            drop.vp *= 0.8
+            drop.vr *= 0.7
+          }
+          drop.pitch += drop.vp * dt
+          drop.roll += drop.vr * dt
+          drop.vp += (-drop.pitch * 24 - drop.vp * 9) * dt
+          drop.vr += (-drop.roll * 18 - drop.vr * 10) * dt
+        }
+        if (
+          Math.abs(drop.vy) < 0.08 &&
+          Math.abs(drop.y) < 0.02 &&
+          Math.abs(drop.pitch) < 0.01 &&
+          Math.abs(drop.roll) < 0.01
+        ) {
+          if (viewStateRef.current === 'down' && drop.mode !== 'recover') {
+            drop.y = -3.1
+            drop.pitch = -0.22
+            drop.roll = -0.08
+          } else {
+            drop.y = 0
+            drop.pitch = 0
+            drop.roll = 0
+          }
+          drop.vy = 0
+          drop.vp = 0
+          drop.vr = 0
+          drop.active = false
+          drop.mode = 'idle'
+        }
+      }
+      const drop = cameraDropRef.current
+      const dropY = -drop.y
+      const dropForward = Math.max(0, dropY * 0.75)
+      const whiteFadeTarget = drop.active
+        ? THREE.MathUtils.clamp((dropY - 1.9) / 0.8, 0, 1)
+        : 0
+      whiteFadeLevelRef.current = THREE.MathUtils.lerp(
+        whiteFadeLevelRef.current,
+        Math.pow(whiteFadeTarget, 1.7),
+        0.14
+      )
+      const fadeValue = whiteFadeLevelRef.current
+      if (whiteFadeRef.current) {
+        whiteFadeRef.current.style.opacity = fadeValue.toFixed(3)
+      }
+      const contentOpacity = (1 - fadeValue).toFixed(3)
+      if (namecardRef.current) {
+        namecardRef.current.style.opacity = contentOpacity
+      }
+      if (namecardTitleRef.current) {
+        namecardTitleRef.current.style.opacity = contentOpacity
+      }
+
       camera.position.x = baseCameraPos.x - mouseOffset.current * 1.2
       camera.position.y =
-        baseCameraPos.y - mouseOffsetY.current * 0.8 + skyPan * 1.1
+        baseCameraPos.y - mouseOffsetY.current * 0.8 + skyPan * 1.1 - dropY
       camera.position.z =
-        baseCameraPos.z + mouseOffsetY.current * 0.45 - skyPan * 1.2
+        baseCameraPos.z +
+        mouseOffsetY.current * 0.45 -
+        skyPan * 1.2 -
+        dropForward
       camera.lookAt(
         baseLookAt.x + mouseOffset.current * 0.08,
         baseLookAt.y + mouseOffsetY.current * 0.05 + skyPan * 2.6,
         baseLookAt.z - skyPan * 6.5
       )
+      if (drop.pitch || drop.roll || viewStateRef.current === 'down') {
+        const holdPitch = viewStateRef.current === 'down' ? -0.18 : 0
+        const holdRoll = viewStateRef.current === 'down' ? -0.05 : 0
+        camera.rotateX(drop.pitch - dropY * 0.12 + holdPitch)
+        camera.rotateZ(drop.roll + holdRoll)
+      }
       const baseCloudX = cloudBaseX * cloudXFactor
       const minCloudX = baseCloudX + minCloudXOffset
       const cloudLoopX = Math.sin(t * 0.4 + cloudMotion[0].phase) * cloudMotion[0].ampX
@@ -1540,6 +1630,22 @@ function Home() {
         swarmTriggerRef.current()
       }
     }
+    const triggerCameraDrop = () => {
+      const drop = cameraDropRef.current
+      drop.active = true
+      drop.mode = 'fall'
+      drop.vy = -9.5
+      drop.vp = 3.4
+      drop.vr = -2.4
+    }
+    const triggerStandUp = () => {
+      const drop = cameraDropRef.current
+      drop.active = true
+      drop.mode = 'recover'
+      drop.vy = 0
+      drop.vp = 0
+      drop.vr = 0
+    }
     const releaseCloudSwarm = () => {
       if (swarmReleaseRef.current) {
         swarmReleaseRef.current()
@@ -1548,14 +1654,29 @@ function Home() {
     const onWheel = (event) => {
       const now = Date.now()
       if (event.deltaY < -5) {
-        triggerCloudSwarm()
+        if (viewStateRef.current === 'normal') {
+          triggerCloudSwarm()
+          viewStateRef.current = 'up'
+        } else if (viewStateRef.current === 'down') {
+          triggerStandUp()
+          viewStateRef.current = 'normal'
+        }
         if (now - scrollLockRef.current < 450) return
         scrollLockRef.current = now
         setActiveCanvas((prev) =>
           Math.min(prev + 1, CANVAS_ITEMS.length - 1)
         )
       } else if (event.deltaY > 5) {
-        releaseCloudSwarm()
+        if (viewStateRef.current === 'normal') {
+          triggerCameraDrop()
+          viewStateRef.current = 'down'
+        } else if (viewStateRef.current === 'up') {
+          releaseCloudSwarm()
+          viewStateRef.current = 'normal'
+        } else if (viewStateRef.current === 'down') {
+          triggerStandUp()
+          viewStateRef.current = 'normal'
+        }
         if (now - scrollLockRef.current < 450) return
         scrollLockRef.current = now
         setActiveCanvas((prev) => Math.max(prev - 1, 0))
@@ -1576,9 +1697,24 @@ function Home() {
       if (Math.abs(scrollDelta) < 30) return
       const now = Date.now()
       if (scrollDelta < 0) {
-        triggerCloudSwarm()
+        if (viewStateRef.current === 'normal') {
+          triggerCloudSwarm()
+          viewStateRef.current = 'up'
+        } else if (viewStateRef.current === 'down') {
+          triggerStandUp()
+          viewStateRef.current = 'normal'
+        }
       } else {
-        releaseCloudSwarm()
+        if (viewStateRef.current === 'normal') {
+          triggerCameraDrop()
+          viewStateRef.current = 'down'
+        } else if (viewStateRef.current === 'up') {
+          releaseCloudSwarm()
+          viewStateRef.current = 'normal'
+        } else if (viewStateRef.current === 'down') {
+          triggerStandUp()
+          viewStateRef.current = 'normal'
+        }
       }
       if (now - scrollLockRef.current < 450) return
       scrollLockRef.current = now
@@ -1602,17 +1738,53 @@ function Home() {
   }, [])
 
   const handleScrollUp = () => {
-    if (swarmTriggerRef.current) {
-      swarmTriggerRef.current()
+    if (viewStateRef.current === 'normal') {
+      if (swarmTriggerRef.current) {
+        swarmTriggerRef.current()
+      }
+      viewStateRef.current = 'up'
+    } else if (viewStateRef.current === 'down') {
+      const drop = cameraDropRef.current
+      drop.active = true
+      drop.mode = 'recover'
+      drop.vy = 0
+      drop.vp = 0
+      drop.vr = 0
+      viewStateRef.current = 'normal'
     }
     setActiveCanvas((prev) => Math.min(prev + 1, CANVAS_ITEMS.length - 1))
   }
 
   const handleScrollDown = () => {
-    if (swarmReleaseRef.current) {
-      swarmReleaseRef.current()
+    if (viewStateRef.current === 'normal') {
+      const drop = cameraDropRef.current
+      drop.active = true
+      drop.mode = 'fall'
+      drop.vy = -9.5
+      drop.vp = 3.4
+      drop.vr = -2.4
+      viewStateRef.current = 'down'
+      setActiveCanvas((prev) => Math.max(prev - 1, 0))
+      return
     }
-    setActiveCanvas((prev) => Math.max(prev - 1, 0))
+    if (viewStateRef.current === 'up') {
+      if (swarmReleaseRef.current) {
+        swarmReleaseRef.current()
+      }
+      viewStateRef.current = 'normal'
+      setActiveCanvas((prev) => Math.max(prev - 1, 0))
+      return
+    }
+    if (viewStateRef.current === 'down') {
+      const drop = cameraDropRef.current
+      drop.active = true
+      drop.mode = 'recover'
+      drop.vy = 0
+      drop.vp = 0
+      drop.vr = 0
+      viewStateRef.current = 'normal'
+      setActiveCanvas((prev) => Math.max(prev - 1, 0))
+    }
   }
 
   return (
@@ -1922,6 +2094,17 @@ function Home() {
           )}
         </section>
       ))}
+      <div
+        ref={whiteFadeRef}
+        style={{
+          position: 'fixed',
+          inset: 0,
+          background: '#ffffff',
+          opacity: 0,
+          pointerEvents: 'none',
+          zIndex: 1,
+        }}
+      />
       <div
         ref={mountRef}
         style={{
