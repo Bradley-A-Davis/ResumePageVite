@@ -67,14 +67,13 @@ const CANVAS_ITEMS = [
 ]
 const DEFAULT_CANVAS_INDEX = 0
 
-function Home({ onScrollUpComplete }) {
+function Home() {
   const mountRef = useRef(null)
   const cursorRef = useRef(null)
   const namecardRef = useRef(null)
   const namecardTitleRef = useRef(null)
   const swarmTriggerRef = useRef(() => {})
   const swarmReleaseRef = useRef(() => {})
-  const onScrollUpCompleteRef = useRef(onScrollUpComplete)
   const scrollUpPendingRef = useRef(false)
   const [activeCanvas, setActiveCanvas] = useState(DEFAULT_CANVAS_INDEX)
   const scrollLockRef = useRef(0)
@@ -134,10 +133,6 @@ function Home({ onScrollUpComplete }) {
         : infoPanelStyle.WebkitBackdropFilter,
     }
   }
-
-  useEffect(() => {
-    onScrollUpCompleteRef.current = onScrollUpComplete
-  }, [onScrollUpComplete])
 
   useEffect(() => {
     const mount = mountRef.current
@@ -1183,9 +1178,6 @@ function Home({ onScrollUpComplete }) {
         swarmState.current >= 0.98
       ) {
         scrollUpPendingRef.current = false
-        if (onScrollUpCompleteRef.current) {
-          onScrollUpCompleteRef.current()
-        }
       }
       if (swarmState.current > 0.01) {
         const centerX = camera.position.x
