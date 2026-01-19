@@ -1149,26 +1149,32 @@ function Home() {
       }
       if (cameraDropRef.current.active) {
         const drop = cameraDropRef.current
+        const slowZone =
+          drop.mode === 'fall'
+            ? THREE.MathUtils.smoothstep(Math.abs(drop.y), 1.1, 2.0)
+            : 0
+        const timeScale = drop.mode === 'fall' ? 1 - slowZone * 0.55 : 1
+        const dropDt = dt * timeScale
         if (drop.mode === 'recover') {
-          drop.vy += (-drop.y * 26 - drop.vy * 9) * dt
-          drop.y += drop.vy * dt
-          drop.pitch += drop.vp * dt
-          drop.roll += drop.vr * dt
-          drop.vp += (-drop.pitch * 28 - drop.vp * 10) * dt
-          drop.vr += (-drop.roll * 20 - drop.vr * 10) * dt
+          drop.vy += (-drop.y * 26 - drop.vy * 9) * dropDt
+          drop.y += drop.vy * dropDt
+          drop.pitch += drop.vp * dropDt
+          drop.roll += drop.vr * dropDt
+          drop.vp += (-drop.pitch * 28 - drop.vp * 10) * dropDt
+          drop.vr += (-drop.roll * 20 - drop.vr * 10) * dropDt
         } else {
-          drop.vy += -22 * dt
-          drop.y += drop.vy * dt
+          drop.vy += -22 * dropDt
+          drop.y += drop.vy * dropDt
           if (drop.y < -3.1) {
             drop.y = -3.1
             drop.vy = -drop.vy * 0.42
             drop.vp *= 0.8
             drop.vr *= 0.7
           }
-          drop.pitch += drop.vp * dt
-          drop.roll += drop.vr * dt
-          drop.vp += (-drop.pitch * 24 - drop.vp * 9) * dt
-          drop.vr += (-drop.roll * 18 - drop.vr * 10) * dt
+          drop.pitch += drop.vp * dropDt
+          drop.roll += drop.vr * dropDt
+          drop.vp += (-drop.pitch * 24 - drop.vp * 9) * dropDt
+          drop.vr += (-drop.roll * 18 - drop.vr * 10) * dropDt
         }
         if (
           Math.abs(drop.vy) < 0.08 &&
@@ -1236,16 +1242,16 @@ function Home() {
       }
       const baseCloudX = cloudBaseX * cloudXFactor
       const minCloudX = baseCloudX + minCloudXOffset
-      const cloudLoopX = Math.sin(t * 0.4 + cloudMotion[0].phase) * cloudMotion[0].ampX
-      const cloudLoopY = Math.sin(t * 0.8 + cloudMotion[0].phase * 2) * cloudMotion[0].ampY
-      const cloud2LoopX = Math.sin(t * 0.4 + cloudMotion[1].phase) * cloudMotion[1].ampX
-      const cloud2LoopY = Math.sin(t * 0.8 + cloudMotion[1].phase * 2) * cloudMotion[1].ampY
-      const cloud3LoopX = Math.sin(t * 0.4 + cloudMotion[2].phase) * cloudMotion[2].ampX
-      const cloud3LoopY = Math.sin(t * 0.8 + cloudMotion[2].phase * 2) * cloudMotion[2].ampY
-      const cloud4LoopX = Math.sin(t * 0.4 + cloudMotion[3].phase) * cloudMotion[3].ampX
-      const cloud4LoopY = Math.sin(t * 0.8 + cloudMotion[3].phase * 2) * cloudMotion[3].ampY
-      const cloud5LoopX = Math.sin(t * 0.4 + cloudMotion[4].phase) * cloudMotion[4].ampX
-      const cloud5LoopY = Math.sin(t * 0.8 + cloudMotion[4].phase * 2) * cloudMotion[4].ampY
+      const cloudLoopX = Math.sin(t * 0.55 + cloudMotion[0].phase) * cloudMotion[0].ampX
+      const cloudLoopY = Math.sin(t * 1.1 + cloudMotion[0].phase * 2) * cloudMotion[0].ampY
+      const cloud2LoopX = Math.sin(t * 0.55 + cloudMotion[1].phase) * cloudMotion[1].ampX
+      const cloud2LoopY = Math.sin(t * 1.1 + cloudMotion[1].phase * 2) * cloudMotion[1].ampY
+      const cloud3LoopX = Math.sin(t * 0.55 + cloudMotion[2].phase) * cloudMotion[2].ampX
+      const cloud3LoopY = Math.sin(t * 1.1 + cloudMotion[2].phase * 2) * cloudMotion[2].ampY
+      const cloud4LoopX = Math.sin(t * 0.55 + cloudMotion[3].phase) * cloudMotion[3].ampX
+      const cloud4LoopY = Math.sin(t * 1.1 + cloudMotion[3].phase * 2) * cloudMotion[3].ampY
+      const cloud5LoopX = Math.sin(t * 0.55 + cloudMotion[4].phase) * cloudMotion[4].ampX
+      const cloud5LoopY = Math.sin(t * 1.1 + cloudMotion[4].phase * 2) * cloudMotion[4].ampY
       cloud.position.x = Math.max(baseCloudX + cloudLoopX, minCloudX)
       cloud.position.y = cloudY + cloudLoopY
       cloud2.position.x = cloud2X + cloud2LoopX
