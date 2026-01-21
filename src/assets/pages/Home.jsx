@@ -8,6 +8,7 @@ const GROUND_WIDTH = 200
 const GROUND_DEPTH = 30
 const CARD_BASE_SCALE = 1.06
 const SWARM_SEED = 1337
+const SCROLL_BREAK_MS = 320
 
 // ----- FAST TERRAIN NOISE (value noise + fbm) -----
 const smoothstep = (t) => t * t * (3 - 2 * t)
@@ -90,6 +91,8 @@ function Home() {
   const scrollUpPendingRef = useRef(false)
   const [activeCanvas, setActiveCanvas] = useState(DEFAULT_CANVAS_INDEX)
   const scrollLockRef = useRef(0)
+  const scrollBreakTimerRef = useRef(0)
+  const scrollGateRef = useRef(false)
   const infoPanelStyle = {
     position: 'fixed',
     left: '50%',
@@ -1659,6 +1662,14 @@ function Home() {
     }
     const onWheel = (event) => {
       const now = Date.now()
+      if (scrollGateRef.current) return
+      scrollGateRef.current = true
+      if (scrollBreakTimerRef.current) {
+        window.clearTimeout(scrollBreakTimerRef.current)
+      }
+      scrollBreakTimerRef.current = window.setTimeout(() => {
+        scrollGateRef.current = false
+      }, SCROLL_BREAK_MS)
       if (event.deltaY < -5) {
         if (viewStateRef.current === 'normal') {
           triggerCloudSwarm()
@@ -1702,6 +1713,14 @@ function Home() {
       const scrollDelta = isReverse ? -deltaY : deltaY
       if (Math.abs(scrollDelta) < 30) return
       const now = Date.now()
+      if (scrollGateRef.current) return
+      scrollGateRef.current = true
+      if (scrollBreakTimerRef.current) {
+        window.clearTimeout(scrollBreakTimerRef.current)
+      }
+      scrollBreakTimerRef.current = window.setTimeout(() => {
+        scrollGateRef.current = false
+      }, SCROLL_BREAK_MS)
       if (scrollDelta < 0) {
         if (viewStateRef.current === 'normal') {
           triggerCloudSwarm()
