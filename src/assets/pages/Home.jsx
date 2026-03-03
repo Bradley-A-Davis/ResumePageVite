@@ -68,7 +68,7 @@ const CANVAS_ITEMS = [
 ]
 const DEFAULT_CANVAS_INDEX = 0
 
-function Home() {
+function Home({ onScrollDownComplete }) {
   const mountRef = useRef(null)
   const cursorRef = useRef(null)
   const namecardRef = useRef(null)
@@ -77,6 +77,7 @@ function Home() {
   const viewStateRef = useRef('normal')
   const swarmTriggerRef = useRef(() => {})
   const swarmReleaseRef = useRef(() => {})
+  const startInUpStateRef = useRef(true)
   const cameraDropRef = useRef({
     y: 0,
     vy: 0,
@@ -89,10 +90,12 @@ function Home() {
   })
   const whiteFadeLevelRef = useRef(0)
   const scrollUpPendingRef = useRef(false)
+  const scrollDownPendingRef = useRef(false)
   const [activeCanvas, setActiveCanvas] = useState(DEFAULT_CANVAS_INDEX)
   const scrollLockRef = useRef(0)
   const scrollBreakTimerRef = useRef(0)
   const scrollGateRef = useRef(false)
+  const triggerFallExitRef = useRef(() => {})
   const infoPanelStyle = {
     position: 'fixed',
     left: '50%',
@@ -1098,6 +1101,19 @@ function Home() {
     }
     swarmTriggerRef.current = triggerSwarm
     swarmReleaseRef.current = releaseSwarm
+    let returnSequenceTimer = 0
+    if (startInUpStateRef.current) {
+      triggerSwarm()
+      scrollUpPendingRef.current = false
+      swarmState.current = 1
+      swarmState.target = 1
+      swarmState.mode = 'in'
+      viewStateRef.current = 'up'
+      returnSequenceTimer = window.setTimeout(() => {
+        releaseSwarm()
+        viewStateRef.current = 'normal'
+      }, 900)
+    }
 
     // --- LOOP ---
     let raf = 0
@@ -1213,6 +1229,17 @@ function Home() {
         0.14
       )
       const fadeValue = whiteFadeLevelRef.current
+      if (
+        scrollDownPendingRef.current &&
+        drop.active &&
+        drop.mode === 'fall' &&
+        fadeValue >= 0.985
+      ) {
+        scrollDownPendingRef.current = false
+        if (onScrollDownComplete) {
+          onScrollDownComplete()
+        }
+      }
       if (whiteFadeRef.current) {
         whiteFadeRef.current.style.opacity = fadeValue.toFixed(3)
       }
@@ -1527,6 +1554,9 @@ function Home() {
     animate()
 
     return () => {
+      if (returnSequenceTimer) {
+        window.clearTimeout(returnSequenceTimer)
+      }
       window.removeEventListener('resize', onResize)
       window.removeEventListener('mousemove', onMouseMove)
       cancelAnimationFrame(raf)
@@ -1634,33 +1664,23 @@ function Home() {
   }, [])
 
   useEffect(() => {
-    const triggerCloudSwarm = () => {
-      if (swarmTriggerRef.current) {
-        swarmTriggerRef.current()
+    triggerFallExitRef.current = () => {
+      if (scrollDownPendingRef.current) return
+      if (viewStateRef.current === 'up' && swarmReleaseRef.current) {
+        swarmReleaseRef.current()
       }
-    }
-    const triggerCameraDrop = () => {
       const drop = cameraDropRef.current
       drop.active = true
       drop.mode = 'fall'
       drop.vy = -9.5
       drop.vp = 3.4
       drop.vr = -2.4
+      scrollDownPendingRef.current = true
+      viewStateRef.current = 'down'
     }
-    const triggerStandUp = () => {
-      const drop = cameraDropRef.current
-      drop.active = true
-      drop.mode = 'recover'
-      drop.vy = 0
-      drop.vp = 0
-      drop.vr = 0
-    }
-    const releaseCloudSwarm = () => {
-      if (swarmReleaseRef.current) {
-        swarmReleaseRef.current()
-      }
-    }
+
     const onWheel = (event) => {
+      if (Math.abs(event.deltaY) <= 5) return
       const now = Date.now()
       if (scrollGateRef.current) return
       scrollGateRef.current = true
@@ -1670,34 +1690,9 @@ function Home() {
       scrollBreakTimerRef.current = window.setTimeout(() => {
         scrollGateRef.current = false
       }, SCROLL_BREAK_MS)
-      if (event.deltaY < -5) {
-        if (viewStateRef.current === 'normal') {
-          triggerCloudSwarm()
-          viewStateRef.current = 'up'
-        } else if (viewStateRef.current === 'down') {
-          triggerStandUp()
-          viewStateRef.current = 'normal'
-        }
-        if (now - scrollLockRef.current < 450) return
-        scrollLockRef.current = now
-        setActiveCanvas((prev) =>
-          Math.min(prev + 1, CANVAS_ITEMS.length - 1)
-        )
-      } else if (event.deltaY > 5) {
-        if (viewStateRef.current === 'normal') {
-          triggerCameraDrop()
-          viewStateRef.current = 'down'
-        } else if (viewStateRef.current === 'up') {
-          releaseCloudSwarm()
-          viewStateRef.current = 'normal'
-        } else if (viewStateRef.current === 'down') {
-          triggerStandUp()
-          viewStateRef.current = 'normal'
-        }
-        if (now - scrollLockRef.current < 450) return
-        scrollLockRef.current = now
-        setActiveCanvas((prev) => Math.max(prev - 1, 0))
-      }
+      if (now - scrollLockRef.current < 450) return
+      scrollLockRef.current = now
+      triggerFallExitRef.current()
     }
 
     let touchStartY = 0
@@ -1709,9 +1704,7 @@ function Home() {
       if (!event.changedTouches?.length) return
       const touchEndY = event.changedTouches[0].clientY
       const deltaY = touchEndY - touchStartY
-      const isReverse = window.matchMedia('(pointer: coarse)').matches
-      const scrollDelta = isReverse ? -deltaY : deltaY
-      if (Math.abs(scrollDelta) < 30) return
+      if (Math.abs(deltaY) < 30) return
       const now = Date.now()
       if (scrollGateRef.current) return
       scrollGateRef.current = true
@@ -1721,35 +1714,9 @@ function Home() {
       scrollBreakTimerRef.current = window.setTimeout(() => {
         scrollGateRef.current = false
       }, SCROLL_BREAK_MS)
-      if (scrollDelta < 0) {
-        if (viewStateRef.current === 'normal') {
-          triggerCloudSwarm()
-          viewStateRef.current = 'up'
-        } else if (viewStateRef.current === 'down') {
-          triggerStandUp()
-          viewStateRef.current = 'normal'
-        }
-      } else {
-        if (viewStateRef.current === 'normal') {
-          triggerCameraDrop()
-          viewStateRef.current = 'down'
-        } else if (viewStateRef.current === 'up') {
-          releaseCloudSwarm()
-          viewStateRef.current = 'normal'
-        } else if (viewStateRef.current === 'down') {
-          triggerStandUp()
-          viewStateRef.current = 'normal'
-        }
-      }
       if (now - scrollLockRef.current < 450) return
       scrollLockRef.current = now
-      if (scrollDelta < 0) {
-        setActiveCanvas((prev) => Math.max(prev - 1, 0))
-      } else {
-        setActiveCanvas((prev) =>
-          Math.min(prev + 1, CANVAS_ITEMS.length - 1)
-        )
-      }
+      triggerFallExitRef.current()
     }
 
     window.addEventListener('wheel', onWheel, { passive: true })
@@ -1763,53 +1730,11 @@ function Home() {
   }, [])
 
   const handleScrollUp = () => {
-    if (viewStateRef.current === 'normal') {
-      if (swarmTriggerRef.current) {
-        swarmTriggerRef.current()
-      }
-      viewStateRef.current = 'up'
-    } else if (viewStateRef.current === 'down') {
-      const drop = cameraDropRef.current
-      drop.active = true
-      drop.mode = 'recover'
-      drop.vy = 0
-      drop.vp = 0
-      drop.vr = 0
-      viewStateRef.current = 'normal'
-    }
-    setActiveCanvas((prev) => Math.min(prev + 1, CANVAS_ITEMS.length - 1))
+    triggerFallExitRef.current()
   }
 
   const handleScrollDown = () => {
-    if (viewStateRef.current === 'normal') {
-      const drop = cameraDropRef.current
-      drop.active = true
-      drop.mode = 'fall'
-      drop.vy = -9.5
-      drop.vp = 3.4
-      drop.vr = -2.4
-      viewStateRef.current = 'down'
-      setActiveCanvas((prev) => Math.max(prev - 1, 0))
-      return
-    }
-    if (viewStateRef.current === 'up') {
-      if (swarmReleaseRef.current) {
-        swarmReleaseRef.current()
-      }
-      viewStateRef.current = 'normal'
-      setActiveCanvas((prev) => Math.max(prev - 1, 0))
-      return
-    }
-    if (viewStateRef.current === 'down') {
-      const drop = cameraDropRef.current
-      drop.active = true
-      drop.mode = 'recover'
-      drop.vy = 0
-      drop.vp = 0
-      drop.vr = 0
-      viewStateRef.current = 'normal'
-      setActiveCanvas((prev) => Math.max(prev - 1, 0))
-    }
+    triggerFallExitRef.current()
   }
 
   return (
@@ -1863,6 +1788,9 @@ function Home() {
           }
         }
         @media (max-width: 768px) {
+          body {
+            overflow: hidden;
+          }
           .namecard-image {
             --card-translate-offset: -48px;
           }
