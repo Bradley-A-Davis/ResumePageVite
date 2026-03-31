@@ -6,9 +6,10 @@ const SKY_TOP = '#2A8AC4'
 const SKY_BOTTOM = '#D6C5E7'
 const GROUND_WIDTH = 200
 const GROUND_DEPTH = 30
-const CARD_BASE_SCALE = 1.06
 const SWARM_SEED = 1337
 const SCROLL_BREAK_MS = 320
+const FRONT_SWARM_COUNT = 25
+const FRONT_SWARM_TEXTURES = ['/sprites/cloud1.png', '/sprites/cloud2.png', '/sprites/cloud3.png']
 
 // ----- FAST TERRAIN NOISE (value noise + fbm) -----
 const smoothstep = (t) => t * t * (3 - 2 * t)
@@ -56,13 +57,9 @@ const createRng = (seed) => {
 }
 
 const CANVAS_ITEMS = [
-  
   {
     title: 'Home Card',
     body: 'Drop your copy, links, or sections here.',
-    image: '/sprites/NameCard4.png',
-    imageMobile: '/sprites/NameCardMobile2.png',
-    imageScale: 1.06,
     transparent: true,
   },
 ]
@@ -71,8 +68,8 @@ const DEFAULT_CANVAS_INDEX = 0
 function Home({ onScrollDownComplete, onScrollUpComplete }) {
   const mountRef = useRef(null)
   const cursorRef = useRef(null)
-  const namecardRef = useRef(null)
-  const namecardTitleRef = useRef(null)
+  const frontSwarmRefs = useRef([])
+  const frontCoverCloudRef = useRef(null)
   const whiteFadeRef = useRef(null)
   const viewStateRef = useRef('normal')
   const swarmTriggerRef = useRef(() => {})
@@ -198,7 +195,7 @@ function Home({ onScrollDownComplete, onScrollUpComplete }) {
     overlayRenderer.setClearColor(0x000000, 0)
     overlayRenderer.domElement.style.position = 'fixed'
     overlayRenderer.domElement.style.inset = '0'
-    overlayRenderer.domElement.style.zIndex = '950'
+    overlayRenderer.domElement.style.zIndex = '100'
     overlayRenderer.domElement.style.pointerEvents = 'none'
 
     mount.appendChild(renderer.domElement)
@@ -1244,14 +1241,6 @@ function Home({ onScrollDownComplete, onScrollUpComplete }) {
       if (whiteFadeRef.current) {
         whiteFadeRef.current.style.opacity = fadeValue.toFixed(3)
       }
-      const contentOpacity = (1 - fadeValue).toFixed(3)
-      if (namecardRef.current) {
-        namecardRef.current.style.opacity = contentOpacity
-      }
-      if (namecardTitleRef.current) {
-        namecardTitleRef.current.style.opacity = contentOpacity
-      }
-
       camera.position.x = baseCameraPos.x - mouseOffset.current * 1.2
       camera.position.y =
         baseCameraPos.y - mouseOffsetY.current * 0.8 + skyPan * 1.1 - dropY
@@ -1382,33 +1371,44 @@ function Home({ onScrollDownComplete, onScrollUpComplete }) {
         coverCloud.visible = false
         coverCloud.material.opacity = 0
       }
-      if (namecardRef.current) {
-        const cardProgress =
-          swarmState.mode === 'out'
-            ? Math.pow(swarmState.current, 1.7)
-            : Math.pow(swarmState.current, 1.6)
-        const cardScale = CARD_BASE_SCALE * (1 + cardProgress * 2.6)
-        const cardTranslate = 36 + cardProgress * 1200
-        namecardRef.current.style.setProperty(
-          '--card-scale',
-          cardScale.toFixed(3)
-        )
-        namecardRef.current.style.setProperty(
-          '--card-translate',
-          `${cardTranslate.toFixed(1)}px`
-        )
+      const pixelsPerUnitAt = (worldPosition) => {
+        const distance = Math.max(0.001, camera.position.distanceTo(worldPosition))
+        return mount.clientHeight / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2) * distance)
       }
-      if (namecardTitleRef.current) {
-        const titleOpacity = Math.max(0, 1 - swarmState.current * 1.8)
-        const titleTranslate = swarmState.current * 520
-        namecardTitleRef.current.style.setProperty(
-          '--title-opacity',
-          titleOpacity.toFixed(3)
-        )
-        namecardTitleRef.current.style.setProperty(
-          '--title-translate',
-          `${titleTranslate.toFixed(1)}px`
-        )
+      swarmClouds.forEach((entry, index) => {
+        const element = frontSwarmRefs.current[index]
+        if (!element || !entry.sprite.visible || entry.material.opacity <= 0.001) {
+          if (element) element.style.opacity = '0'
+          return
+        }
+        const projected = entry.sprite.position.clone().project(camera)
+        const x = (projected.x * 0.5 + 0.5) * mount.clientWidth
+        const y = (-projected.y * 0.5 + 0.5) * mount.clientHeight
+        const pixelsPerUnit = pixelsPerUnitAt(entry.sprite.position)
+        const width = entry.sprite.scale.x * pixelsPerUnit
+        const height = entry.sprite.scale.y * pixelsPerUnit
+        element.style.left = `${x.toFixed(1)}px`
+        element.style.top = `${y.toFixed(1)}px`
+        element.style.width = `${width.toFixed(1)}px`
+        element.style.height = `${height.toFixed(1)}px`
+        element.style.opacity = entry.material.opacity.toFixed(3)
+        element.style.transform = `translate(-50%, -50%) rotate(${entry.sprite.rotation.z}rad)`
+      })
+      if (frontCoverCloudRef.current && coverCloud.visible && coverCloud.material.opacity > 0.001) {
+        const projected = coverCloud.position.clone().project(camera)
+        const x = (projected.x * 0.5 + 0.5) * mount.clientWidth
+        const y = (-projected.y * 0.5 + 0.5) * mount.clientHeight
+        const pixelsPerUnit = pixelsPerUnitAt(coverCloud.position)
+        const width = coverCloud.scale.x * pixelsPerUnit
+        const height = coverCloud.scale.y * pixelsPerUnit
+        frontCoverCloudRef.current.style.left = `${x.toFixed(1)}px`
+        frontCoverCloudRef.current.style.top = `${y.toFixed(1)}px`
+        frontCoverCloudRef.current.style.width = `${width.toFixed(1)}px`
+        frontCoverCloudRef.current.style.height = `${height.toFixed(1)}px`
+        frontCoverCloudRef.current.style.opacity = coverCloud.material.opacity.toFixed(3)
+        frontCoverCloudRef.current.style.transform = 'translate(-50%, -50%)'
+      } else if (frontCoverCloudRef.current) {
+        frontCoverCloudRef.current.style.opacity = '0'
       }
       grass.quaternion.copy(camera.quaternion)
       grassLeft.quaternion.copy(camera.quaternion)
@@ -1983,67 +1983,7 @@ function Home({ onScrollDownComplete, onScrollUpComplete }) {
             visibility: item.hidden ? 'hidden' : 'visible',
           }}
         >
-          {item.image ? (
-            <div className="namecard-wrap">
-              {item.imageMobile ? (
-                <picture>
-                  <source
-                    media="(max-width: 768px)"
-                    srcSet={item.imageMobile}
-                  />
-                  <img
-                    ref={namecardRef}
-                    src={item.image}
-                    alt={item.title}
-                    className="namecard-image"
-                    style={{
-                      width: '100%',
-                      height: 'auto',
-                      borderRadius: '20px',
-                      transform:
-                        'translateY(calc(var(--card-translate, 36px) + var(--card-translate-offset, 0px))) scale(var(--card-scale, 1))',
-                    }}
-                  />
-                </picture>
-              ) : (
-                <img
-                  ref={namecardRef}
-                  src={item.image}
-                  alt={item.title}
-                  className="namecard-image"
-                  style={{
-                    width: '100%',
-                    height: 'auto',
-                    borderRadius: '20px',
-                    transform:
-                      'translateY(calc(var(--card-translate, 36px) + var(--card-translate-offset, 0px))) scale(var(--card-scale, 1))',
-                  }}
-                />
-              )}
-          <div
-            className="namecard-title"
-            ref={namecardTitleRef}
-            style={{
-              textAlign: 'center',
-              fontSize: '28px',
-              letterSpacing: '0.1em',
-              textTransform: 'uppercase',
-              color: '#F8FAFC',
-              opacity: 'var(--title-opacity, 1)',
-              transform:
-                'translateY(calc(var(--title-translate, 0px) + var(--title-offset, 0px)))',
-              fontFamily: '"Vast Shadow", serif',
-              fontWeight: 700,
-                  textShadow:
-                    '0 14px 28px rgba(0, 0, 0, 0.95), 0 0 10px rgba(0, 0, 0, 0.8), 0 0 18px rgba(0, 0, 0, 0.6)',
-                  WebkitTextStroke: '1px rgba(0, 0, 0, 0.75)',
-                }}
-              >
-                Engineer <span className="namecard-sep">*</span> Scientist{' '}
-                <span className="namecard-sep">*</span> Innovator
-              </div>
-            </div>
-          ) : (
+          {!item.hidden && !item.transparent && (
             <>
               <h1
                 style={{
@@ -2079,6 +2019,66 @@ function Home({ onScrollDownComplete, onScrollUpComplete }) {
           zIndex: 1,
         }}
       />
+      <div
+        style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(255, 255, 255, 0.03)',
+          backdropFilter: 'blur(15px) grayscale(1) contrast(1.25)',
+          WebkitBackdropFilter: 'blur(15px) grayscale(1) contrast(1.25)',
+          pointerEvents: 'none',
+          zIndex: 1100,
+        }}
+      />
+      <div
+        style={{
+          position: 'fixed',
+          inset: 0,
+          pointerEvents: 'none',
+          zIndex: 1150,
+          overflow: 'hidden',
+        }}
+      >
+        {Array.from({ length: FRONT_SWARM_COUNT }, (_, index) => (
+          <img
+            key={`front-swarm-${index}`}
+            ref={(element) => {
+              frontSwarmRefs.current[index] = element
+            }}
+            src={FRONT_SWARM_TEXTURES[index % FRONT_SWARM_TEXTURES.length]}
+            alt=""
+            aria-hidden="true"
+            style={{
+              position: 'absolute',
+              left: 0,
+              top: 0,
+              width: 0,
+              height: 0,
+              opacity: 0,
+              transform: 'translate(-50%, -50%)',
+              transformOrigin: 'center center',
+              willChange: 'transform, width, height, opacity, left, top',
+            }}
+          />
+        ))}
+        <img
+          ref={frontCoverCloudRef}
+          src="/sprites/cloud1.png"
+          alt=""
+          aria-hidden="true"
+          style={{
+            position: 'absolute',
+            left: 0,
+            top: 0,
+            width: 0,
+            height: 0,
+            opacity: 0,
+            transform: 'translate(-50%, -50%)',
+            transformOrigin: 'center center',
+            willChange: 'transform, width, height, opacity, left, top',
+          }}
+        />
+      </div>
       <div
         ref={mountRef}
         style={{

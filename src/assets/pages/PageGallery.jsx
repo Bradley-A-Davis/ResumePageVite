@@ -20,7 +20,7 @@ const toTitle = (name) =>
 
 const toRoute = (name) => {
   const normalized = name.toLowerCase()
-  if (normalized.includes('home')) return '/home'
+  if (normalized.includes('home')) return '/'
   if (normalized.includes('imposter')) return '/imposter'
   if (normalized.includes('tmep') || normalized.includes('bow')) return '/bow'
 

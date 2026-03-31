@@ -3,6 +3,7 @@ import Home from './assets/pages/Home.jsx'
 import Imposter from './assets/pages/imposter.jsx'
 import Bow from './assets/pages/Bow.jsx'
 import PageGallery from './assets/pages/PageGallery.jsx'
+import Projects from './assets/pages/projects.jsx'
 
 const getCurrentPath = () => window.location.pathname || '/'
 
@@ -44,14 +45,20 @@ function App() {
     )
   }
 
-  if (path === '/home') {
+  if (path === '/') {
     return (
       <Home
+        onScrollUpComplete={() => {
+          if (switchPending) return
+          setSwitchPending(true)
+          navigateTo('/projects')
+          setPath('/projects')
+        }}
         onScrollDownComplete={() => {
           if (switchPending) return
           setSwitchPending(true)
-          navigateTo('/')
-          setPath('/')
+          navigateTo('/gallery')
+          setPath('/gallery')
         }}
       />
     )
@@ -61,7 +68,15 @@ function App() {
     return <Bow />
   }
 
-  return <PageGallery onNavigate={handleNavigate} />
+  if (path === '/gallery') {
+    return <PageGallery onNavigate={handleNavigate} />
+  }
+
+  if (path === '/projects') {
+    return <Projects />
+  }
+
+  return <Home onScrollDownComplete={() => {}} />
 }
 
 export default App
