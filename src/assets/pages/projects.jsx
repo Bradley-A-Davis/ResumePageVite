@@ -10,6 +10,47 @@ const SWARM_SEED = 1337
 const SCROLL_BREAK_MS = 320
 const FRONT_SWARM_COUNT = 25
 const FRONT_SWARM_TEXTURES = ['/sprites/cloud1.png', '/sprites/cloud2.png', '/sprites/cloud3.png']
+const PROJECT_COLUMNS = [
+  {
+    key: 'left',
+    position: { left: 'clamp(24px, 6vw, 88px)' },
+    title: 'Projects',
+    items: [
+      'NAS Server',
+      'General Server',
+      'Bow Mount',
+      'GR3 Game',
+    ],
+  },
+  {
+    key: 'center',
+    position: { left: '50%', transform: 'translateX(-50%)' },
+    title: 'Websites',
+    items: [
+      'Imposter Game',
+      'Card Catalog',
+      'Home Page',
+      'Egg Game',
+      'Cassidy Portfolio',
+      'Race Calendar',
+    ],
+  },
+  {
+    key: 'right',
+    position: { right: 'clamp(24px, 6vw, 88px)' },
+    title: 'Github',
+    items: [
+      'Imposter',
+      'Card Catalog',
+      'Home Page',
+      'Egg Game',
+      'Cassidy Portfolio',
+      'Race Calendar',
+      'Bradley Portfolio',
+      'Admin Page',
+    ],
+  },
+]
 
 // ----- FAST TERRAIN NOISE (value noise + fbm) -----
 const smoothstep = (t) => t * t * (3 - 2 * t)
@@ -65,11 +106,13 @@ const CANVAS_ITEMS = [
 ]
 const DEFAULT_CANVAS_INDEX = 0
 
-function Home({ onScrollDownComplete, onScrollUpComplete }) {
+function Home({ onScrollDownComplete, onScrollUpComplete, isActive = true }) {
   const mountRef = useRef(null)
   const cursorRef = useRef(null)
   const frontSwarmRefs = useRef([])
   const frontCoverCloudRef = useRef(null)
+  const isActiveRef = useRef(isActive)
+  const syncSceneSizeRef = useRef(() => {})
   const whiteFadeRef = useRef(null)
   const viewStateRef = useRef('normal')
   const swarmTriggerRef = useRef(() => {})
@@ -150,6 +193,22 @@ function Home({ onScrollDownComplete, onScrollUpComplete }) {
         : infoPanelStyle.WebkitBackdropFilter,
     }
   }
+
+  useEffect(() => {
+    isActiveRef.current = isActive
+    const mount = mountRef.current
+    if (mount) {
+      mount.style.pointerEvents = isActive ? 'auto' : 'none'
+    }
+    const cursor = cursorRef.current
+    if (cursor && !isActive) {
+      cursor.style.left = '-9999px'
+      cursor.style.top = '-9999px'
+    }
+    if (isActive) {
+      syncSceneSizeRef.current()
+    }
+  }, [isActive])
 
   useEffect(() => {
     const mount = mountRef.current
@@ -1144,6 +1203,10 @@ function Home({ onScrollDownComplete, onScrollUpComplete }) {
       { key: 'bush2FarFront', amp: 0.05, phase: 7.5 },
     ]
     const animate = () => {
+      if (!isActiveRef.current) {
+        raf = requestAnimationFrame(animate)
+        return
+      }
       const now = performance.now()
       const t = (now - startTime) * 0.001
       const dt = Math.min(0.05, (now - lastFrame) * 0.001)
@@ -1532,6 +1595,7 @@ function Home({ onScrollDownComplete, onScrollUpComplete }) {
 
     const onResize = () => {
       const { clientWidth, clientHeight } = mount
+      if (!clientWidth || !clientHeight) return
       camera.aspect = clientWidth / clientHeight
       camera.updateProjectionMatrix()
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
@@ -1541,8 +1605,10 @@ function Home({ onScrollDownComplete, onScrollUpComplete }) {
       updateCloudPositions()
       updateMountainPositions()
     }
+    syncSceneSizeRef.current = onResize
 
     const onMouseMove = (event) => {
+      if (!isActiveRef.current) return
       const rect = mount.getBoundingClientRect()
       const normalizedX =
         ((event.clientX - rect.left) / rect.width) * 2 - 1
@@ -1636,6 +1702,7 @@ function Home({ onScrollDownComplete, onScrollUpComplete }) {
       'button, a, input, select, textarea, [role="button"], [data-clickable="true"]'
 
     const onMouseMove = (event) => {
+      if (!isActiveRef.current) return
       mouse.x = event.clientX
       mouse.y = event.clientY
       const hit = document.elementFromPoint(event.clientX, event.clientY)
@@ -1650,6 +1717,10 @@ function Home({ onScrollDownComplete, onScrollUpComplete }) {
     }
 
     const animate = () => {
+      if (!isActiveRef.current) {
+        raf = requestAnimationFrame(animate)
+        return
+      }
       cursor.style.left = `${mouse.x}px`
       cursor.style.top = `${mouse.y}px`
       raf = requestAnimationFrame(animate)
@@ -1693,6 +1764,7 @@ function Home({ onScrollDownComplete, onScrollUpComplete }) {
     }
 
     const onWheel = (event) => {
+      if (!isActiveRef.current) return
       if (Math.abs(event.deltaY) <= 5) return
       const now = Date.now()
       if (scrollGateRef.current) return
@@ -1714,10 +1786,12 @@ function Home({ onScrollDownComplete, onScrollUpComplete }) {
 
     let touchStartY = 0
     const onTouchStart = (event) => {
+      if (!isActiveRef.current) return
       if (!event.touches?.length) return
       touchStartY = event.touches[0].clientY
     }
     const onTouchEnd = (event) => {
+      if (!isActiveRef.current) return
       if (!event.changedTouches?.length) return
       const touchEndY = event.changedTouches[0].clientY
       const deltaY = touchEndY - touchStartY
@@ -1751,16 +1825,24 @@ function Home({ onScrollDownComplete, onScrollUpComplete }) {
   }, [])
 
   const handleScrollUp = () => {
+    if (!isActiveRef.current) return
     triggerSkyExitRef.current()
   }
 
   const handleScrollDown = () => {
+    if (!isActiveRef.current) return
     triggerFallExitRef.current()
   }
 
   return (
     <>
       <style>{`
+        @font-face {
+          font-family: 'NeuropolXRg';
+          src: url('/fonts/Neuropol X Rg.otf') format('opentype');
+          font-weight: 400;
+          font-style: normal;
+        }
         .scroll-hint--up {
           animation: scrollHintBobUp 3.6s ease-in-out infinite;
         }
@@ -1864,117 +1946,6 @@ function Home({ onScrollDownComplete, onScrollUpComplete }) {
           }}
         />
       </div>
-      {activeCanvas === DEFAULT_CANVAS_INDEX && (
-        <button
-          type="button"
-          className="scroll-hint--up"
-          onClick={handleScrollUp}
-          style={{
-            position: 'fixed',
-            top: '18px',
-            left: '50%',
-            transform: 'translateX(-50%)',
-            zIndex: 950,
-            background:
-              'linear-gradient(135deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.04))',
-            borderRadius: '18px',
-            boxShadow: 'none',
-            border: '1px solid rgba(255, 255, 255, 0.28)',
-            backdropFilter: 'blur(16px) saturate(140%)',
-            WebkitBackdropFilter: 'blur(16px) saturate(140%)',
-            padding: '10px 18px 12px',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            gap: '6px',
-            pointerEvents: 'auto',
-            cursor: 'pointer',
-            outline: 'none',
-            border: '1px solid rgba(255, 255, 255, 0.28)',
-            font: 'inherit',
-          }}
-        >
-          <span
-            style={{
-              display: 'block',
-              width: '14px',
-              height: '14px',
-              borderRight: '2px solid rgba(255, 255, 255, 0.85)',
-              borderBottom: '2px solid rgba(255, 255, 255, 0.85)',
-              borderRadius: '2px',
-              transform: 'rotate(-135deg)',
-              filter: 'drop-shadow(0 4px 10px rgba(0, 0, 0, 0.35))',
-            }}
-          />
-          <span
-            style={{
-              color: 'rgba(255, 255, 255, 0.82)',
-              fontSize: '14px',
-              letterSpacing: '0.18em',
-              textTransform: 'uppercase',
-              fontWeight: 600,
-              textShadow: '0 6px 14px rgba(0, 0, 0, 0.4)',
-            }}
-          >
-            Scroll up to see Projects
-          </span>
-        </button>
-      )}
-      {activeCanvas === DEFAULT_CANVAS_INDEX && (
-        <button
-          type="button"
-          className="scroll-hint--down"
-          onClick={handleScrollDown}
-          style={{
-            position: 'fixed',
-            bottom: '18px',
-            left: '50%',
-            transform: 'translateX(-50%)',
-            zIndex: 950,
-            background:
-              'linear-gradient(135deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.04))',
-            borderRadius: '18px',
-            boxShadow: 'none',
-            border: '1px solid rgba(255, 255, 255, 0.28)',
-            backdropFilter: 'blur(16px) saturate(140%)',
-            WebkitBackdropFilter: 'blur(16px) saturate(140%)',
-            padding: '12px 18px 10px',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            gap: '6px',
-            pointerEvents: 'auto',
-            cursor: 'pointer',
-            outline: 'none',
-            font: 'inherit',
-          }}
-        >
-          <span
-            style={{
-              color: 'rgba(255, 255, 255, 0.82)',
-              fontSize: '14px',
-              letterSpacing: '0.18em',
-              textTransform: 'uppercase',
-              fontWeight: 600,
-              textShadow: '0 6px 14px rgba(0, 0, 0, 0.4)',
-            }}
-          >
-            Scroll down to see Experiences
-          </span>
-          <span
-            style={{
-              display: 'block',
-              width: '14px',
-              height: '14px',
-              borderRight: '2px solid rgba(255, 255, 255, 0.85)',
-              borderBottom: '2px solid rgba(255, 255, 255, 0.85)',
-              borderRadius: '2px',
-              transform: 'rotate(45deg)',
-              filter: 'drop-shadow(0 4px 10px rgba(0, 0, 0, 0.35))',
-            }}
-          />
-        </button>
-      )}
       {CANVAS_ITEMS.map((item, index) => (
         <section
           key={item.title}
@@ -2024,12 +1995,66 @@ function Home({ onScrollDownComplete, onScrollUpComplete }) {
           position: 'fixed',
           inset: 0,
           background: 'rgba(255, 255, 255, 0.03)',
-          backdropFilter: 'blur(15px) grayscale(1) contrast(1.25)',
-          WebkitBackdropFilter: 'blur(15px) grayscale(1) contrast(1.25)',
+          backdropFilter: 'blur(15px) grayscale(1) brightness(0.75) contrast(1.25)',
+          WebkitBackdropFilter: 'blur(15px) grayscale(1) brightness(0.75) contrast(1.25)',
           pointerEvents: 'none',
           zIndex: 1100,
         }}
       />
+      {PROJECT_COLUMNS.map((column) => (
+        <section
+          key={column.key}
+          style={{
+            position: 'fixed',
+            top: '18%',
+            width: 'min(360px, calc(100vw - 48px))',
+            color: '#F7F4EF',
+            zIndex: 1125,
+            textAlign: 'center',
+            ...column.position,
+          }}
+        >
+          <h1
+            style={{
+              margin: '0 0 22px',
+              fontSize: 'clamp(40px, 7vw, 64px)',
+              lineHeight: 0.94,
+              letterSpacing: '-0.07em',
+              fontFamily: '"NeuropolXRg", sans-serif',
+              fontWeight: 700,
+              WebkitTextStroke: '1px rgba(0, 0, 0, 0.98)',
+              textShadow: '0 2px 8px rgba(0, 0, 0, 0.55)',
+            }}
+          >
+            {column.title}
+          </h1>
+          <div
+            style={{
+              marginTop: '22px',
+              display: 'grid',
+              gap: '12px',
+              justifyItems: 'center',
+            }}
+          >
+            {column.items.map((projectName) => (
+              <div
+                key={`${column.key}-${projectName}`}
+                style={{
+                  fontSize: 'clamp(20px, 2.6vw, 26px)',
+                  lineHeight: 1.2,
+                  letterSpacing: '-0.01em',
+                  color: 'rgba(247, 244, 239, 0.82)',
+                  fontFamily: '"NeuropolXRg", sans-serif',
+                  WebkitTextStroke: '0.7px rgba(0, 0, 0, 0.98)',
+                  textShadow: '0 2px 6px rgba(0, 0, 0, 0.5)',
+                }}
+              >
+                {projectName}
+              </div>
+            ))}
+          </div>
+        </section>
+      ))}
       <div
         style={{
           position: 'fixed',

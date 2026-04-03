@@ -68,11 +68,13 @@ const CANVAS_ITEMS = [
 ]
 const DEFAULT_CANVAS_INDEX = 0
 
-function Home({ onScrollDownComplete, onScrollUpComplete }) {
+function Home({ onScrollDownComplete, onScrollUpComplete, isActive = true }) {
   const mountRef = useRef(null)
   const cursorRef = useRef(null)
   const namecardRef = useRef(null)
   const namecardTitleRef = useRef(null)
+  const isActiveRef = useRef(isActive)
+  const syncSceneSizeRef = useRef(() => {})
   const whiteFadeRef = useRef(null)
   const viewStateRef = useRef('normal')
   const swarmTriggerRef = useRef(() => {})
@@ -153,6 +155,22 @@ function Home({ onScrollDownComplete, onScrollUpComplete }) {
         : infoPanelStyle.WebkitBackdropFilter,
     }
   }
+
+  useEffect(() => {
+    isActiveRef.current = isActive
+    const mount = mountRef.current
+    if (mount) {
+      mount.style.pointerEvents = isActive ? 'auto' : 'none'
+    }
+    const cursor = cursorRef.current
+    if (cursor && !isActive) {
+      cursor.style.left = '-9999px'
+      cursor.style.top = '-9999px'
+    }
+    if (isActive) {
+      syncSceneSizeRef.current()
+    }
+  }, [isActive])
 
   useEffect(() => {
     const mount = mountRef.current
@@ -1147,6 +1165,10 @@ function Home({ onScrollDownComplete, onScrollUpComplete }) {
       { key: 'bush2FarFront', amp: 0.05, phase: 7.5 },
     ]
     const animate = () => {
+      if (!isActiveRef.current) {
+        raf = requestAnimationFrame(animate)
+        return
+      }
       const now = performance.now()
       const t = (now - startTime) * 0.001
       const dt = Math.min(0.05, (now - lastFrame) * 0.001)
@@ -1532,6 +1554,7 @@ function Home({ onScrollDownComplete, onScrollUpComplete }) {
 
     const onResize = () => {
       const { clientWidth, clientHeight } = mount
+      if (!clientWidth || !clientHeight) return
       camera.aspect = clientWidth / clientHeight
       camera.updateProjectionMatrix()
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
@@ -1541,8 +1564,10 @@ function Home({ onScrollDownComplete, onScrollUpComplete }) {
       updateCloudPositions()
       updateMountainPositions()
     }
+    syncSceneSizeRef.current = onResize
 
     const onMouseMove = (event) => {
+      if (!isActiveRef.current) return
       const rect = mount.getBoundingClientRect()
       const normalizedX =
         ((event.clientX - rect.left) / rect.width) * 2 - 1
@@ -1636,6 +1661,7 @@ function Home({ onScrollDownComplete, onScrollUpComplete }) {
       'button, a, input, select, textarea, [role="button"], [data-clickable="true"]'
 
     const onMouseMove = (event) => {
+      if (!isActiveRef.current) return
       mouse.x = event.clientX
       mouse.y = event.clientY
       const hit = document.elementFromPoint(event.clientX, event.clientY)
@@ -1650,6 +1676,10 @@ function Home({ onScrollDownComplete, onScrollUpComplete }) {
     }
 
     const animate = () => {
+      if (!isActiveRef.current) {
+        raf = requestAnimationFrame(animate)
+        return
+      }
       cursor.style.left = `${mouse.x}px`
       cursor.style.top = `${mouse.y}px`
       raf = requestAnimationFrame(animate)
@@ -1693,6 +1723,7 @@ function Home({ onScrollDownComplete, onScrollUpComplete }) {
     }
 
     const onWheel = (event) => {
+      if (!isActiveRef.current) return
       if (Math.abs(event.deltaY) <= 5) return
       const now = Date.now()
       if (scrollGateRef.current) return
@@ -1714,10 +1745,12 @@ function Home({ onScrollDownComplete, onScrollUpComplete }) {
 
     let touchStartY = 0
     const onTouchStart = (event) => {
+      if (!isActiveRef.current) return
       if (!event.touches?.length) return
       touchStartY = event.touches[0].clientY
     }
     const onTouchEnd = (event) => {
+      if (!isActiveRef.current) return
       if (!event.changedTouches?.length) return
       const touchEndY = event.changedTouches[0].clientY
       const deltaY = touchEndY - touchStartY
@@ -1751,10 +1784,12 @@ function Home({ onScrollDownComplete, onScrollUpComplete }) {
   }, [])
 
   const handleScrollUp = () => {
+    if (!isActiveRef.current) return
     triggerSkyExitRef.current()
   }
 
   const handleScrollDown = () => {
+    if (!isActiveRef.current) return
     triggerFallExitRef.current()
   }
 

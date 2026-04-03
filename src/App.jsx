@@ -16,6 +16,10 @@ const navigateTo = (path, replace = false) => {
 function App() {
   const [path, setPath] = useState(getCurrentPath)
   const [switchPending, setSwitchPending] = useState(false)
+  const [homeMounted, setHomeMounted] = useState(() => getCurrentPath() === '/')
+  const [projectsMounted, setProjectsMounted] = useState(
+    () => getCurrentPath() === '/projects'
+  )
 
   useEffect(() => {
     const handlePopState = () => {
@@ -26,6 +30,15 @@ function App() {
     window.addEventListener('popstate', handlePopState)
     return () => window.removeEventListener('popstate', handlePopState)
   }, [])
+
+  useEffect(() => {
+    if (path === '/') {
+      setHomeMounted(true)
+    }
+    if (path === '/projects') {
+      setProjectsMounted(true)
+    }
+  }, [path])
 
   const handleNavigate = (nextPath) => {
     navigateTo(nextPath)
@@ -45,22 +58,34 @@ function App() {
     )
   }
 
-  if (path === '/') {
+  if (path === '/' || path === '/projects') {
     return (
-      <Home
-        onScrollUpComplete={() => {
-          if (switchPending) return
-          setSwitchPending(true)
-          navigateTo('/projects')
-          setPath('/projects')
-        }}
-        onScrollDownComplete={() => {
-          if (switchPending) return
-          setSwitchPending(true)
-          navigateTo('/gallery')
-          setPath('/gallery')
-        }}
-      />
+      <>
+        {homeMounted && (
+          <div style={{ display: path === '/' ? 'block' : 'none' }}>
+            <Home
+              isActive={path === '/'}
+              onScrollUpComplete={() => {
+                if (switchPending) return
+                setSwitchPending(true)
+                navigateTo('/projects')
+                setPath('/projects')
+              }}
+              onScrollDownComplete={() => {
+                if (switchPending) return
+                setSwitchPending(true)
+                navigateTo('/gallery')
+                setPath('/gallery')
+              }}
+            />
+          </div>
+        )}
+        {projectsMounted && (
+          <div style={{ display: path === '/projects' ? 'block' : 'none' }}>
+            <Projects isActive={path === '/projects'} />
+          </div>
+        )}
+      </>
     )
   }
 
@@ -70,10 +95,6 @@ function App() {
 
   if (path === '/gallery') {
     return <PageGallery onNavigate={handleNavigate} />
-  }
-
-  if (path === '/projects') {
-    return <Projects />
   }
 
   return <Home onScrollDownComplete={() => {}} />
